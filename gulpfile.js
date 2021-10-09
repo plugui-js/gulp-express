@@ -1,52 +1,73 @@
-const { src, watch, series, dest, parallel } = require('gulp'),
-{ resolve } = require('path'),
+const { series, src, dest, watch } = require('gulp'),
+browserSync = require('browser-sync').create(),
 gls = require('gulp-live-server'),
-browser_sync = require('browser-sync').create(),
 sass = require('gulp-sass')(require('sass')),
 minify = require('gulp-minify'),
-concat = require('gulp-concat');
+concat = require('gulp-concat'),
+plumber = require('gulp-plumber'),
+notify = require('gulp-notify'),
+postcss = require('gulp-postcss');
 
-const dirs = {
-    images_src_dir: resolve(__dirname, './assets/images'),
-    images_dest_dir: resolve(__dirname, './public/imgs'),
-    styles_src: resolve(__dirname, './src/styles/**/*.scss'),
-    styles_dest: resolve(__dirname, './public/css'),
-    js_src: resolve(__dirname, './src/js/**/*.js'),
-    js_dest: resolve(__dirname, './public/js')
+
+const paths = {
+    scripts: {
+        src: './src/js/**/*.js',
+        dest: './public/js'
+    },
+    styles: {
+        src: './src/styles/**/*.scss',
+        dest: './public/css'
+    },
+    templates: {
+        src: './src/views/**/*.hbs'
+    }
 };
 
-const serve = (done) => {
-    const server = gls.new('./src/server.js');
-    browser_sync.init({
+
+const  serve = (done) => {
+    const ls = gls.new('./src/server.js');
+
+    browserSync.init({
         proxy: 'localhost:2000',
-        open: false,
-        watch: true
+        open: false
     });
-    server.start();
+
+    watch([ paths.styles.src ], series([ styles_pipe ]), browserSync.reload);
+    watch([  paths.templates.src ], browserSync.reload);
+    watch([ paths.scripts.src ], series([ scripts_pipe ]), browserSync.reload);
+
+    ls.start();
+    done();
+}
+
+const styles_pipe = (done) => {
+    src([ paths.styles.src])
+    .pipe(plumber({ errorHandler }))
+    .pipe(postcss())
+    .pipe(sass())
+    .pipe(concat('main.css'))
+    .pipe(dest(paths.styles.dest))
+    .pipe(browserSync.stream());
     done();
 }
 
 
-const csspipe = (done) => {
-    return src([dirs.styles_src])
-    .pipe(sass())
-    .pipe(dest(dirs.styles_dest))
-    .pipe(browser_sync.stream());
+const scripts_pipe = (done) => {
+    src([ paths.scripts.src])
+    .pipe(plumber({ errorHandler }))
+    .pipe(minify())
+    .pipe(dest(paths.scripts.dest));
+    done();
 }
 
 
-const jspipe = (done) => {
-    return src([dirs.js_src])
-    .pipe(minify({}))
-    .pipe(concat('app.js'))
-    .pipe(dest(dirs.js_dest))
-    .pipe(browser_sync.stream());
+const errorHandler = (error) => {
+    notify.onError({
+        title: 'Error',
+        message: error.toString()
+    })(error);
 }
 
-const watcher = (done) => {
-    return watch([ dirs.styles_src, dirs.js_src ],
-        { ignoreInitial: false, delay: 500 },
-        series([ csspipe, jspipe ]));
-};
 
-exports.default = series([jspipe, csspipe, serve, watcher]);
+
+exports.default = series([ scripts_pipe, styles_pipe, serve ]);
